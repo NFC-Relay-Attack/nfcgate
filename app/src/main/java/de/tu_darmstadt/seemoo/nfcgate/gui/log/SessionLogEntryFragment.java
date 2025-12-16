@@ -165,6 +165,7 @@ public class SessionLogEntryFragment extends Fragment {
 
     private static class SessionLogEntryListAdapter extends CustomArrayAdapter<NfcComm> {
         private String mPrevCommandType = "";
+        private long mPrevTimestamp = 0;
 
         SessionLogEntryListAdapter(@NonNull Context context, int resource) {
             super(context, resource);
@@ -179,6 +180,17 @@ public class SessionLogEntryFragment extends Fragment {
             return initial ? new ConfigBuilder(data).toString() : bytesToHexDump(data);
         }
 
+        private String formatTimestampWithDelta(long currentTimestamp, long prevTimestamp) {
+            String formattedTime = SessionLog.isoDateFormatter().format(new Date(currentTimestamp));
+
+            if (prevTimestamp > 0) {
+                long deltaMs = currentTimestamp - prevTimestamp;
+                return String.format("%s (+%dms)", formattedTime, deltaMs);
+            }
+
+            return formattedTime;
+        }
+
         @NonNull
         @Override
         public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
@@ -188,8 +200,10 @@ public class SessionLogEntryFragment extends Fragment {
             // set image indicating card or reader
             v.<ImageView>findViewById(R.id.type).setImageResource(byCard(comm.isCard()));
 
-            // classify APDU command type
-            String hexData = Utils.bytesToHex(comm.getData());
+            // classify and display command type for all data
+            TextView commandTypeView = v.findViewById(R.id.command_type);
+            // Remove colons from hex string for APDU classification
+            String hexData = Utils.bytesToHex(comm.getData()).replace(":", "");
             String commandType = ApduClassifier.classifyApdu(hexData, comm.isCard(), mPrevCommandType);
 
             // update previous command type if this is a command (not a response)
@@ -197,19 +211,20 @@ public class SessionLogEntryFragment extends Fragment {
                 mPrevCommandType = commandType;
             }
 
-            // set command type
-            TextView commandTypeView = v.findViewById(R.id.command_type);
-            if (!commandType.equals("UNKNOWN") && !commandType.isEmpty()) {
-                commandTypeView.setText(commandType);
-                commandTypeView.setVisibility(View.VISIBLE);
-            } else {
-                commandTypeView.setVisibility(View.GONE);
-            }
+            // display command type (including UNKNOWN for initial/unrecognized data)
+            commandTypeView.setText(commandType);
+            commandTypeView.setVisibility(View.VISIBLE);
 
             // set content to either config stream or binary content
             v.<TextView>findViewById(R.id.data).setText(byInitial(comm.isInitial(), comm.getData()));
-            // set timestamp
-            v.<TextView>findViewById(R.id.timestamp).setText(SessionLog.isoDateFormatter().format(new Date(comm.getTimestamp())));
+
+            // set timestamp with time delta
+            long currentTimestamp = comm.getTimestamp();
+            String timestampText = formatTimestampWithDelta(currentTimestamp, mPrevTimestamp);
+            v.<TextView>findViewById(R.id.timestamp).setText(timestampText);
+
+            // update previous timestamp for next item
+            mPrevTimestamp = currentTimestamp;
 
             return v;
         }
